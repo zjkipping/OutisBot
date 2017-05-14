@@ -1,3 +1,4 @@
+# When file is edited to your liking, rename to "cfg.py"
 HOST = "irc.twitch.tv" # the Twitch IRC server
 PORT = 6667 # always use port 6667!
 NICK = "" # your Bot's Twitch username, lowercase

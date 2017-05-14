@@ -1,46 +1,32 @@
-import chat_users
-import socket
+from irc_client import IrcClient, IrcInfo, IrcCommand, CommandType, IrcResponse, ResponseType
+import types
 import cfg
-import re
-from collections import deque
-from chat_reader import ChatInterpreter
-from command_issuer import QueueCommandSystem
-from threading import Thread
 
-# ALl of this needs to be pushed into the IRC Client system
-s = socket.socket()
-s.connect((cfg.HOST, cfg.PORT))
-s.send("PASS {}\r\n".format(cfg.PASS).encode("utf-8"))
-s.send("NICK {}\r\n".format(cfg.NICK).encode("utf-8"))
-s.send("JOIN {}\r\n".format(cfg.CHAN).encode("utf-8"))
-s.setblocking(0)
-response = ""
-while re.search(r"\bJOIN\b", response) is None :
-    try:
-        response = s.recv(1024).decode("utf-8")
-    except socket.error:
-        '''No Responses Yet'''
-#
-print("<----------  Connected to Chat  ---------->")
+config = IrcInfo(cfg.HOST, cfg.PORT, cfg.NICK, cfg.PASS, cfg.CHAN)
+rate = cfg.RATE
+channel = cfg.CHAN
 
-queue = deque([])
-chat_interpreter = ChatInterpreter(s, queue, cfg.CHAN, cfg.PATT)
-chat_interpreter.setDaemon(True)
-chat_interpreter.start()
-queue_system = QueueCommandSystem(s, queue, cfg.RATE)
-queue_system.setDaemon(True)
-queue_system.start()
+client = IrcClient(config, rate, True)
+while client.connected is False:
+    pass
 
-# Need to make these into Class based threads to overwrite the default functionality
-t1 = Thread(target = chat_users.run)
-t1.setDaemon(True)
-t1.start()
-# -----
+args = types.SimpleNamespace()
+args.channel = channel
+args.message = "Hello Chat!"
+client.addCommand_front(IrcCommand(CommandType.message, args))
 
+# need to move this while loop to a ChatSystem class, that is given info to create it's own IrcClient
 running = True
-while running :
-    if input() == "exit":
-        # Initiate Thread Stopping Here
-        #   -> Need threads to PART from any connections they have to twitch servers
-        #   -> Need threads that have data, to save them to corresponding files/database
-        running = False
+while running:
+    if client.hasResponses():
+        response:IrcResponse = client.getResponse()
+        if response.type == ResponseType.ping:
+            client.addCommand_front(IrcCommand(CommandType.pong, types.SimpleNamespace()))
+        elif response.type == ResponseType.message:
+             print("{}: {}".format(response.properties.username, response.properties.message))
+
+    # if input() == "exit":
+    #     # Initiate Thread Stopping Here
+    #     #   -> Need threads to PART from any connections they have to twitch servers
+    #     #   -> Need threads that have data, to save them to corresponding files/database
+    #     running = False
