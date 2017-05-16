@@ -3,6 +3,7 @@ import time
 import threading
 import socket
 import types
+import datetime # I believe any times given from api.twitch.tv are given in UTC date format (need to confirm)
 from enum import Enum
 from collections import deque
 
@@ -11,7 +12,6 @@ class CommandType(Enum):
     message = 2
     timeout = 3
     ban = 4
-
 
 class IrcCommand:
     type: CommandType
@@ -22,33 +22,31 @@ class IrcCommand:
         self.args = _args
 
 def send_pong(connection: socket):
-    print("<---- Replied To Server's Ping ---->")
+    print("|{}| replied to server's ping".format(datetime.datetime.utcnow()))
     connection.send("PONG :tmi.twitch.tv\r\n".encode("utf-8"))
 
 def send_message(connection: socket, args: types.SimpleNamespace):
     connection.send("PRIVMSG {} :{}\r\n".format(args.channel, args.message).encode("utf-8"))
-    print("<---- Bot Message: '{}' ---->".format(args.message))
+    print("|{}| {}(bot): {}".format(datetime.datetime.utcnow(), args.username, args.message))
 
 def timeout_user(connection: socket, args: types.SimpleNamespace):
-    print("<---- Timed Out User {} for {} ---->".format(args.username, args.reason))
+    print("|{}| TIMED OUT '{}' for '{}'".format(datetime.datetime.utcnow(), args.username, args.reason))
     connection.send("PRIVMSG {} :.timeout {} {} {}\r\n".format(args.channel, args.username, args.time, args.reason).encode("utf-8"))
 
 def ban_user(connection: socket, args: types.SimpleNamespace):
-    print("<---- Banned User {} for {} ---->".format(args.username, args.reason))
+    print("|{}| BANNED '{}' for '{}'".format(datetime.datetime.utcnow(), args.username, args.reason))
     connection.send("PRIVMSG {} :.ban {} {}\r\n".format(args.channel, args.username, args.reason).encode("utf-8"))
 
 class CommandQueue(threading.Thread):
     connection: socket
     commands: deque
     rate: float
-    cap_mode: bool
 
-    def __init__(self, _connection: socket, _commands: deque, _rate: float, _cap_mode):
+    def __init__(self, _connection: socket, _commands: deque, _rate: float):
         super(CommandQueue, self).__init__()
         self.connection = _connection
         self.rate = _rate
         self.commands = _commands
-        self.cap_mode = _cap_mode
 
     def run(self):
         while True:
@@ -62,8 +60,6 @@ class CommandQueue(threading.Thread):
                     timeout_user(self.connection, command.args)
                 elif command.type == CommandType.ban:
                     ban_user(self.connection, command.args)
-                # if self.cap_mode:
-                #     if command.type == CommandType.
                 time.sleep(1 / self.rate)
 
 class ResponseType(Enum):
@@ -115,12 +111,16 @@ def decodeMessage(response: str, cap_mode: bool):
         properties.message = CHAT_MSG.sub("", response).rstrip()
     return properties
 
+def decodeJoinPart(response: str):
+    properties = types.SimpleNamespace()
+    properties.username = re.search(r"\w+", response).group(0)
+    return properties
+
 class ResponseQueue(threading.Thread):
     connection: socket
     responses: deque
     rate: float
     cap_mode: bool
-
     def __init__(self, _connection: socket, _responses: deque, _rate: float, _cap_mode):
         super(ResponseQueue, self).__init__()
         self.connection = _connection
@@ -130,20 +130,24 @@ class ResponseQueue(threading.Thread):
 
     def run(self):
         while True:
-            properties = types.SimpleNamespace()
             try:
                 response = self.connection.recv(1024).decode("utf-8")
                 if re.search(r"PING", response) is not None:
+                    properties = types.SimpleNamespace()
+                    properties.timestamp = datetime.datetime.utcnow()
                     self.responses.appendleft(IrcResponse(ResponseType.ping, properties))
                 elif re.search(r"PRIVMSG", response) is not None:
                     properties = decodeMessage(response, self.cap_mode)
+                    properties.timestamp = datetime.datetime.utcnow()
                     self.responses.append(IrcResponse(ResponseType.message, properties))
                 if self.cap_mode:
                     if re.search(r"JOIN", response):
-                        # need to decode JOIN
+                        properties = decodeJoinPart(response)
+                        properties.timestamp = datetime.datetime.utcnow()
                         self.responses.append(IrcResponse(ResponseType.join, properties))
                     elif re.search(r"PART", response):
-                        # need to decode PART
+                        properties = decodeJoinPart(response)
+                        properties.timestamp = datetime.datetime.utcnow()
                         self.responses.append(IrcResponse(ResponseType.part, properties))
             except socket.error:
                 '''No Responses Yet'''
@@ -186,7 +190,7 @@ class IrcClient:
         self.connection.setblocking(0)
 
         response = ""
-        while re.search(r"Welcome", response) is None:
+        while re.search(r"NAMES", response) is None:
             try:
                 response = self.connection.recv(1024).decode("utf-8")
             except socket.error:
@@ -198,7 +202,7 @@ class IrcClient:
         self.rq.setDaemon(True)
         self.rq.start()
 
-        self.cq = CommandQueue(self.connection, self.commands, _rate, cap_mode)
+        self.cq = CommandQueue(self.connection, self.commands, _rate)
         self.cq.setDaemon(True)
         self.cq.start()
 
