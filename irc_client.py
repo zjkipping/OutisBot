@@ -65,10 +65,10 @@ class CommandQueue(threading.Thread):
 class ResponseType(Enum):
     ping = 1
     message = 2
-    join = 3
-    part = 4
-    subscribe = 5
-    follow = 6
+    whisper = 3
+    join = 4
+    part = 5
+    subscribe = 6
     cheer = 7
 
 class IrcResponse:
@@ -79,25 +79,23 @@ class IrcResponse:
         self.type = _type
         self.properties = _properties
 
-def getCapProps(props: list):
+def getMessageProps(props: list):
     properties = types.SimpleNamespace()
-    properties.badges = props[0].split("=")[1]
-    properties.color = props[1].split("=")[1]
-    properties.display_name = props[2].split("=")[1]
-    properties.emotes = props[3].split("=")[1]
-    properties.id = props[4].split("=")[1]
-    properties.mod = props[5].split("=")[1]
-    properties.room_id = props[6].split("=")[1]
-    properties.sent_ts = props[7].split("=")[1]
-    properties.subscriber = props[8].split("=")[1]
-    properties.tmi_sent_ts = props[9].split("=")[1]
-    properties.turbo = props[10].split("=")[1]
-    properties.user_id = props[11].split("=")[1]
-    properties.user_type = props[12].split("=")[1]
+    for prop in props:
+        parts = prop.split("=")
+        if parts[0] == "@badges":
+            properties.badges = parts[1]
+        elif parts[0] == "mod":
+            properties.mod = parts[1]
+        elif parts[0] == "subscriber":
+            properties.subscriber = parts[1]
+        elif parts[0] == "user-id":
+            properties.user_id = parts[1]
+        elif parts[0] == "user-type":
+            properties.user_type = parts[1]
     return properties
-
 def decodeMessage(response: str, cap_mode: bool):
-    CHAT_MSG = re.compile(r"^:\w+!\w+@\w+\.tmi\.twitch\.tv PRIVMSG #\w+ :")
+    CHAT_MSG = re.compile(r"^:\w+!\w+@\w+\.tmi\.twitch\.tv \w+ #\w+ :")
     properties = types.SimpleNamespace()
     if cap_mode:
         parts = response.split(" ", 1)
@@ -105,16 +103,53 @@ def decodeMessage(response: str, cap_mode: bool):
         msg = parts[1]
         properties.username = re.search(r"\w+", msg).group(0)
         properties.message = CHAT_MSG.sub("", msg).rstrip()
-        properties.info = getCapProps(cap_props)
+        properties.info = getMessageProps(cap_props)
     else:
         properties.username = re.search(r"\w+", response).group(0)
         properties.message = CHAT_MSG.sub("", response).rstrip()
+        properties.info = types.SimpleNamespace()
+    return properties
+
+def getWhisperProps(props: list):
+    properties = types.SimpleNamespace()
+    for prop in props:
+        parts = prop.split("=")
+        if parts[0] == "@badges":
+            properties.badges = parts[1]
+        elif parts[0] == "user-id":
+            properties.user_id = parts[1]
+        elif parts[0] == "user-type":
+            properties.user_type = parts[1]
+    return properties
+
+def decodeWhisper(response: str, cap_mode: bool):
+    CHAT_MSG = re.compile(r"^:\w+!\w+@\w+\.tmi\.twitch\.tv \w+ #\w+ :")
+    properties = types.SimpleNamespace()
+    if cap_mode:
+        parts = response.split(" ", 1)
+        cap_props = parts[0].split(";")
+        msg = parts[1]
+        properties.username = re.search(r"\w+", msg).group(0)
+        properties.message = CHAT_MSG.sub("", msg).rstrip()
+        properties.info = getWhisperProps(cap_props)
+    else:
+        properties.username = re.search(r"\w+", response).group(0)
+        properties.message = CHAT_MSG.sub("", response).rstrip()
+        properties.info = types.SimpleNamespace()
     return properties
 
 def decodeJoinPart(response: str):
     properties = types.SimpleNamespace()
     properties.username = re.search(r"\w+", response).group(0)
     return properties
+
+def decodeUserNotice(response: str):
+    properties = types.SimpleNamespace
+    "@badges=subscriber/0,premium/1;color=;display-name=Hazarddaking;emotes=;id=eca43c17-c085-4983-bb10-a7c7bb3bbf51;login=hazarddaking;mod=0;msg-id=resub;" \
+    "msg-param-months=2;msg-param-sub-plan-name=Channel\sSubscription\s(summit1g);msg-param-sub-plan=Prime;room-id=26490481;subscriber=1;" \
+    "system-msg=Hazarddaking\sjust\ssubscribed\swith\sTwitch\sPrime.\sHazarddaking\ssubscribed\sfor\s2\smonths\sin\sa\srow!;tmi-sent-ts=1494983687845;turbo=0;user-id=103321354;" \
+    "user-type= :tmi.twitch.tv USERNOTICE #summit1g :Keep it up man!"
+    # still need to do something with this, using Summit1G's chat as reference for some responses
 
 class ResponseQueue(threading.Thread):
     connection: socket
@@ -140,7 +175,7 @@ class ResponseQueue(threading.Thread):
                     properties = decodeMessage(response, self.cap_mode)
                     properties.timestamp = datetime.datetime.utcnow()
                     self.responses.append(IrcResponse(ResponseType.message, properties))
-                if self.cap_mode:
+                elif self.cap_mode:
                     if re.search(r"JOIN", response):
                         properties = decodeJoinPart(response)
                         properties.timestamp = datetime.datetime.utcnow()
@@ -149,6 +184,14 @@ class ResponseQueue(threading.Thread):
                         properties = decodeJoinPart(response)
                         properties.timestamp = datetime.datetime.utcnow()
                         self.responses.append(IrcResponse(ResponseType.part, properties))
+                    elif re.search(r"WHISPER", response):
+                        properties = decodeWhisper(response, self.cap_mode)
+                        properties.timestamp = datetime.datetime.utcnow()
+                        self.responses.append(IrcResponse(ResponseType.whisper, properties))
+                    elif re.search(r"USERNOTICE", response): # usually a subscription
+                        print("response: " + response)
+                    else:
+                        print("Un-Documented Response: {}".format(response))
             except socket.error:
                 '''No Responses Yet'''
 

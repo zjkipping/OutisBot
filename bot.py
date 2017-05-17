@@ -13,14 +13,17 @@ client = IrcClient(config, rate, True)
 while client.connected is False:
     pass
 
-args = types.SimpleNamespace()
-args.channel = channel
-args.username = name
-args.message = "Hello Chat!"
-client.addCommand_back(IrcCommand(CommandType.message, args))
+# args = types.SimpleNamespace()
+# args.channel = channel
+# args.username = name
+# args.message = "Hello Chat!"
+# client.addCommand_back(IrcCommand(CommandType.message, args))
 
 # need to move this while loop to a ChatSystem class, that is given info to create it's own IrcClient
 # also need to make functions out of the command types, to condense code
+
+# Possibly have two main classes ran from here, and this just controls changing settings/stopping?
+#   - mainly the first class deals with chat and commands; other deals with building user lists and doing background meta events
 
 running = True
 while running:
@@ -29,15 +32,15 @@ while running:
         if response.type == ResponseType.ping:
             client.addCommand_front(IrcCommand(CommandType.pong, types.SimpleNamespace()))
         elif response.type == ResponseType.message:
-            if response.properties.message == "die":
-                args = types.SimpleNamespace()
-                args.channel = channel
-                args.username = response.properties.username
-                args.reason = "Precision of Language"
-                args.time = 5
-                client.addCommand_back(IrcCommand(CommandType.timeout, args))
-            else:
-                print("|{}| {}({}): {}".format(response.properties.timestamp, response.properties.username, response.properties.info.user_id, response.properties.message))
+            # if response.properties.message == "die":
+            #     args = types.SimpleNamespace()
+            #     args.channel = channel
+            #     args.username = response.properties.username
+            #     args.reason = "Precision of Language"
+            #     args.time = 5
+            #     client.addCommand_back(IrcCommand(CommandType.timeout, args))
+            # else:
+                print("|{}| {}({}): {}".format(response.properties.timestamp, response.properties.username, getattr(response.properties.info, 'user_id', '#') , response.properties.message))
         elif response.type == ResponseType.join:
             print("|{}| '{}' joined the chat".format(response.properties.timestamp, response.properties.username))
         elif response.type == ResponseType.part:
