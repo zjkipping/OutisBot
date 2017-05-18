@@ -1,13 +1,9 @@
-
-Occasionally the server will send more than 1 'response' even when the chat isn't being spammed...
-    - Going to have to find a way to check for additional msgs in each 'response' from the servers
-
-Finish up USERNOTICE responses
-    - has to do with subbing/resubbing
-
 Find way to incorporate cheers from PRIVMSG's
 
-Incorporate join/leave's to do a viewer list? mainly for chat currency events
+Incorporate join/leave's to do a viewer list? mainly for chat currency events (NOT POSSIBLE CURRENTLY)
 
 Use the api.twitch.tv to do statistics based things/commands
     - mod/follow/sub list
+
+Currently if a Channel has approx 5000 viewers or more, the server will not send JOIN/PART
+    - so realistically the bot should just use the chatters from tmi.twitch.tv to asses user lists for now

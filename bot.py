@@ -19,11 +19,13 @@ while client.connected is False:
 # args.message = "Hello Chat!"
 # client.addCommand_back(IrcCommand(CommandType.message, args))
 
+
 # need to move this while loop to a ChatSystem class, that is given info to create it's own IrcClient
 # also need to make functions out of the command types, to condense code
 
 # Possibly have two main classes ran from here, and this just controls changing settings/stopping?
 #   - mainly the first class deals with chat and commands; other deals with building user lists and doing background meta events
+
 
 running = True
 while running:
@@ -32,6 +34,7 @@ while running:
         if response.type == ResponseType.ping:
             client.addCommand_front(IrcCommand(CommandType.pong, types.SimpleNamespace()))
         elif response.type == ResponseType.message:
+            pass
             # if response.properties.message == "die":
             #     args = types.SimpleNamespace()
             #     args.channel = channel
@@ -40,11 +43,16 @@ while running:
             #     args.time = 5
             #     client.addCommand_back(IrcCommand(CommandType.timeout, args))
             # else:
-                print("|{}| {}({}): {}".format(response.properties.timestamp, response.properties.username, getattr(response.properties.info, 'user_id', '#') , response.properties.message))
+            print("|{}| {}({}): {}".format(response.properties.timestamp, response.properties.username, getattr(response.properties.info, 'user_id', '#') , response.properties.message))
         elif response.type == ResponseType.join:
-            print("|{}| '{}' joined the chat".format(response.properties.timestamp, response.properties.username))
+            print("'{}' joined the chat".format(response.properties.username))
         elif response.type == ResponseType.part:
-            print("|{}| '{}' parted from the chat".format(response.properties.timestamp, response.properties.username))
+            print("'{}' parted from the chat".format(response.properties.username))
+        elif response.type == ResponseType.subscribe:
+            if response.properties.type == "resub":
+                print("'{}' just resubscribed for {} months in a row".format(response.properties.display_name, response.properties.months))
+            else:
+                print("'{}' just subscribed!".format(response.properties.display_name))
 
     # if input() == "exit":
     #     # Initiate Thread Stopping Here

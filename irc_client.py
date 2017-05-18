@@ -86,13 +86,15 @@ def getMessageProps(props: list):
         if parts[0] == "@badges":
             properties.badges = parts[1]
         elif parts[0] == "mod":
-            properties.mod = parts[1]
+            properties.mod = int(parts[1])
         elif parts[0] == "subscriber":
-            properties.subscriber = parts[1]
+            properties.subscriber = int(parts[1])
         elif parts[0] == "user-id":
             properties.user_id = parts[1]
         elif parts[0] == "user-type":
             properties.user_type = parts[1]
+        elif parts[0] == "display-name":
+            properties.display_name = parts[1]
     return properties
 def decodeMessage(response: str, cap_mode: bool):
     CHAT_MSG = re.compile(r"^:\w+!\w+@\w+\.tmi\.twitch\.tv \w+ #\w+ :")
@@ -114,12 +116,14 @@ def getWhisperProps(props: list):
     properties = types.SimpleNamespace()
     for prop in props:
         parts = prop.split("=")
-        if parts[0] == "@badges":
+        if "badge" in parts[0]:
             properties.badges = parts[1]
         elif parts[0] == "user-id":
             properties.user_id = parts[1]
         elif parts[0] == "user-type":
             properties.user_type = parts[1]
+        elif parts[0] == "display-name":
+            properties.display_name = parts[1]
     return properties
 
 def decodeWhisper(response: str, cap_mode: bool):
@@ -144,12 +148,21 @@ def decodeJoinPart(response: str):
     return properties
 
 def decodeUserNotice(response: str):
-    properties = types.SimpleNamespace
-    "@badges=subscriber/0,premium/1;color=;display-name=Hazarddaking;emotes=;id=eca43c17-c085-4983-bb10-a7c7bb3bbf51;login=hazarddaking;mod=0;msg-id=resub;" \
-    "msg-param-months=2;msg-param-sub-plan-name=Channel\sSubscription\s(summit1g);msg-param-sub-plan=Prime;room-id=26490481;subscriber=1;" \
-    "system-msg=Hazarddaking\sjust\ssubscribed\swith\sTwitch\sPrime.\sHazarddaking\ssubscribed\sfor\s2\smonths\sin\sa\srow!;tmi-sent-ts=1494983687845;turbo=0;user-id=103321354;" \
-    "user-type= :tmi.twitch.tv USERNOTICE #summit1g :Keep it up man!"
-    # still need to do something with this, using Summit1G's chat as reference for some responses
+    properties = types.SimpleNamespace()
+    props = response.split(";")
+    for prop in props:
+        parts = prop.split("=")
+        if parts[0] == "msg-param-months":
+            properties.months = int(parts[1])
+        if parts[0] == "msg-param-sub-plan":
+            properties.sub_plan = parts[1]
+        if parts[0] == "display-name":
+            properties.display_name = parts[1]
+        if parts[0] == "user-id":
+            properties.user_id = parts[1]
+        if parts[0] == "msg-id":
+            properties.type = parts[1]
+    return properties
 
 class ResponseQueue(threading.Thread):
     connection: socket
@@ -172,9 +185,12 @@ class ResponseQueue(threading.Thread):
                     properties.timestamp = datetime.datetime.utcnow()
                     self.responses.appendleft(IrcResponse(ResponseType.ping, properties))
                 elif re.search(r"PRIVMSG", response) is not None:
-                    properties = decodeMessage(response, self.cap_mode)
-                    properties.timestamp = datetime.datetime.utcnow()
-                    self.responses.append(IrcResponse(ResponseType.message, properties))
+                    responses = response.split("\n@")
+                    for res in responses:
+                        if "PRIVMSG" in res:
+                            properties = decodeMessage(res, self.cap_mode)
+                            properties.timestamp = datetime.datetime.utcnow()
+                            self.responses.append(IrcResponse(ResponseType.message, properties))
                 elif self.cap_mode:
                     if re.search(r"JOIN", response):
                         properties = decodeJoinPart(response)
@@ -188,10 +204,11 @@ class ResponseQueue(threading.Thread):
                         properties = decodeWhisper(response, self.cap_mode)
                         properties.timestamp = datetime.datetime.utcnow()
                         self.responses.append(IrcResponse(ResponseType.whisper, properties))
-                    elif re.search(r"USERNOTICE", response): # usually a subscription
-                        print("response: " + response)
-                    else:
-                        print("Un-Documented Response: {}".format(response))
+                    elif re.search(r"USERNOTICE", response):
+                        properties = decodeUserNotice(response)
+                        properties.timestamp = datetime.datetime.utcnow()
+                        self.responses.appendleft(IrcResponse(ResponseType.subscribe, properties))
+                    # Only thing that is left over is the MODE(mod state changes), I don't believe this needs to be added as a response currently. Get current mod list from tmi.twitch.tv
             except socket.error:
                 '''No Responses Yet'''
 
