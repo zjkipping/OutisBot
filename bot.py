@@ -43,14 +43,15 @@ while running:
             #     args.time = 5
             #     client.addCommand_back(IrcCommand(CommandType.timeout, args))
             # else:
-            print("|{}| {}({}): {}".format(response.properties.timestamp, response.properties.username, getattr(response.properties.info, 'user_id', '#') , response.properties.message))
+            # print("|{}| {}({}): {}".format(response.properties.timestamp, response.properties.username, getattr(response.properties.info, 'user_id', '#') , response.properties.message))
+            pass
         elif response.type == ResponseType.join:
             print("'{}' joined the chat".format(response.properties.username))
         elif response.type == ResponseType.part:
             print("'{}' parted from the chat".format(response.properties.username))
         elif response.type == ResponseType.subscribe:
             if response.properties.type == "resub":
-                print("'{}' just resubscribed for {} months in a row".format(response.properties.display_name, response.properties.months))
+                print("'{}' just resubscribed for {} months in a row!".format(response.properties.display_name, response.properties.months))
             else:
                 print("'{}' just subscribed!".format(response.properties.display_name))
 

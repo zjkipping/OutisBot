@@ -7,3 +7,11 @@ Use the api.twitch.tv to do statistics based things/commands
 
 Currently if a Channel has approx 5000 viewers or more, the server will not send JOIN/PART
     - so realistically the bot should just use the chatters from tmi.twitch.tv to asses user lists for now
+
+Currently a system is in place to catch twitchnotify's in chat in case the USERSTATE for the subscription doesn't show up
+    No idea if these are 'real' subs but for now might as well keep the fix until it's hopefully no longer needed
+    The concern draws from when the twitchnotify happens but then then the user shares their sub and it appears in chat twice both from the bot and the twitch systems...
+    Also if the user doesn't care to share the sub with a custom message, then the bot wouldn't ever send a message in chat
+
+ Need to handle possible disconnects...
+    - haven't seen any disconnects as of yet, but having functionality for auto-reconnecting based on ever increasing intervals would be good in case twitch or internet goes down

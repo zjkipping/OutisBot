@@ -7,61 +7,6 @@ import datetime # I believe any times given from api.twitch.tv are given in UTC 
 from enum import Enum
 from collections import deque
 
-class CommandType(Enum):
-    pong = 1
-    message = 2
-    timeout = 3
-    ban = 4
-
-class IrcCommand:
-    type: CommandType
-    args: types.SimpleNamespace
-
-    def __init__(self, _type: CommandType, _args: types.SimpleNamespace):
-        self.type = _type
-        self.args = _args
-
-def send_pong(connection: socket):
-    print("|{}| replied to server's ping".format(datetime.datetime.utcnow()))
-    connection.send("PONG :tmi.twitch.tv\r\n".encode("utf-8"))
-
-def send_message(connection: socket, args: types.SimpleNamespace):
-    connection.send("PRIVMSG {} :{}\r\n".format(args.channel, args.message).encode("utf-8"))
-    print("|{}| {}(bot): {}".format(datetime.datetime.utcnow(), args.username, args.message))
-
-def timeout_user(connection: socket, args: types.SimpleNamespace):
-    print("|{}| TIMED OUT '{}' for '{}'".format(datetime.datetime.utcnow(), args.username, args.reason))
-    connection.send("PRIVMSG {} :.timeout {} {} {}\r\n".format(args.channel, args.username, args.time, args.reason).encode("utf-8"))
-
-def ban_user(connection: socket, args: types.SimpleNamespace):
-    print("|{}| BANNED '{}' for '{}'".format(datetime.datetime.utcnow(), args.username, args.reason))
-    connection.send("PRIVMSG {} :.ban {} {}\r\n".format(args.channel, args.username, args.reason).encode("utf-8"))
-
-class CommandQueue(threading.Thread):
-    connection: socket
-    commands: deque
-    rate: float
-
-    def __init__(self, _connection: socket, _commands: deque, _rate: float):
-        super(CommandQueue, self).__init__()
-        self.connection = _connection
-        self.rate = _rate
-        self.commands = _commands
-
-    def run(self):
-        while True:
-            if len(self.commands) != 0:
-                command: IrcCommand = self.commands.popleft()
-                if command.type == CommandType.pong:
-                    send_pong(self.connection)
-                elif command.type == CommandType.message:
-                    send_message(self.connection, command.args)
-                elif command.type == CommandType.timeout:
-                    timeout_user(self.connection, command.args)
-                elif command.type == CommandType.ban:
-                    ban_user(self.connection, command.args)
-                time.sleep(1 / self.rate)
-
 class ResponseType(Enum):
     ping = 1
     message = 2
@@ -90,12 +35,13 @@ def getMessageProps(props: list):
         elif parts[0] == "subscriber":
             properties.subscriber = int(parts[1])
         elif parts[0] == "user-id":
-            properties.user_id = parts[1]
+            properties.user_id = int(parts[1])
         elif parts[0] == "user-type":
             properties.user_type = parts[1]
         elif parts[0] == "display-name":
             properties.display_name = parts[1]
     return properties
+
 def decodeMessage(response: str, cap_mode: bool):
     CHAT_MSG = re.compile(r"^:\w+!\w+@\w+\.tmi\.twitch\.tv \w+ #\w+ :")
     properties = types.SimpleNamespace()
@@ -119,7 +65,7 @@ def getWhisperProps(props: list):
         if "badge" in parts[0]:
             properties.badges = parts[1]
         elif parts[0] == "user-id":
-            properties.user_id = parts[1]
+            properties.user_id = int(parts[1])
         elif parts[0] == "user-type":
             properties.user_type = parts[1]
         elif parts[0] == "display-name":
@@ -159,58 +105,61 @@ def decodeUserNotice(response: str):
         if parts[0] == "display-name":
             properties.display_name = parts[1]
         if parts[0] == "user-id":
-            properties.user_id = parts[1]
+            properties.user_id = int(parts[1])
         if parts[0] == "msg-id":
             properties.type = parts[1]
+        if parts[0] == "login":
+            properties.username = parts[1]
     return properties
 
-class ResponseQueue(threading.Thread):
-    connection: socket
-    responses: deque
-    rate: float
-    cap_mode: bool
-    def __init__(self, _connection: socket, _responses: deque, _rate: float, _cap_mode):
-        super(ResponseQueue, self).__init__()
-        self.connection = _connection
-        self.responses = _responses
-        self.rate = _rate
-        self.cap_mode = _cap_mode
+def decodeNotify(response: str):
+    properties = types.SimpleNamespace()
+    NOTIFY = re.compile(r"^:twitchnotify!twitchnotify@twitchnotify\.tmi\.twitch\.tv PRIVMSG #\w+ :")
+    parts = NOTIFY.sub("", response).rstrip().split(" ")
+    properties.display_name = parts[0]
+    properties.username = properties.display_name.lower()
+    if "Prime" in parts:
+        properties.sub_plan = "Prime"
+    else:
+        properties.sub_plan = "1000"
+    if "months" in parts:
+        properties.type = "resub"
+        properties.months = int(parts[parts.index("months") - 1])
+    else:
+        properties.type = "sub"
+        properties.months = 1
+    properties.user_id = None
+    return properties
 
-    def run(self):
-        while True:
-            try:
-                response = self.connection.recv(1024).decode("utf-8")
-                if re.search(r"PING", response) is not None:
-                    properties = types.SimpleNamespace()
-                    properties.timestamp = datetime.datetime.utcnow()
-                    self.responses.appendleft(IrcResponse(ResponseType.ping, properties))
-                elif re.search(r"PRIVMSG", response) is not None:
-                    responses = response.split("\n@")
-                    for res in responses:
-                        if "PRIVMSG" in res:
-                            properties = decodeMessage(res, self.cap_mode)
-                            properties.timestamp = datetime.datetime.utcnow()
-                            self.responses.append(IrcResponse(ResponseType.message, properties))
-                elif self.cap_mode:
-                    if re.search(r"JOIN", response):
-                        properties = decodeJoinPart(response)
-                        properties.timestamp = datetime.datetime.utcnow()
-                        self.responses.append(IrcResponse(ResponseType.join, properties))
-                    elif re.search(r"PART", response):
-                        properties = decodeJoinPart(response)
-                        properties.timestamp = datetime.datetime.utcnow()
-                        self.responses.append(IrcResponse(ResponseType.part, properties))
-                    elif re.search(r"WHISPER", response):
-                        properties = decodeWhisper(response, self.cap_mode)
-                        properties.timestamp = datetime.datetime.utcnow()
-                        self.responses.append(IrcResponse(ResponseType.whisper, properties))
-                    elif re.search(r"USERNOTICE", response):
-                        properties = decodeUserNotice(response)
-                        properties.timestamp = datetime.datetime.utcnow()
-                        self.responses.appendleft(IrcResponse(ResponseType.subscribe, properties))
-                    # Only thing that is left over is the MODE(mod state changes), I don't believe this needs to be added as a response currently. Get current mod list from tmi.twitch.tv
-            except socket.error:
-                '''No Responses Yet'''
+class CommandType(Enum):
+    pong = 1
+    message = 2
+    timeout = 3
+    ban = 4
+
+class IrcCommand:
+    type: CommandType
+    args: types.SimpleNamespace
+
+    def __init__(self, _type: CommandType, _args: types.SimpleNamespace):
+        self.type = _type
+        self.args = _args
+
+def send_pong(connection: socket):
+    print("replied to server's ping")
+    connection.send("PONG :tmi.twitch.tv\r\n".encode("utf-8"))
+
+def send_message(connection: socket, args: types.SimpleNamespace):
+    print("{}: {}".format(args.username, args.message))
+    connection.send("PRIVMSG {} :{}\r\n".format(args.channel, args.message).encode("utf-8"))
+
+def timeout_user(connection: socket, args: types.SimpleNamespace):
+    print("TIMED OUT '{}' for '{}'".format(args.username, args.reason))
+    connection.send("PRIVMSG {} :.timeout {} {} {}\r\n".format(args.channel, args.username, args.time, args.reason).encode("utf-8"))
+
+def ban_user(connection: socket, args: types.SimpleNamespace):
+    print("BANNED '{}' for '{}'".format(args.username, args.reason))
+    connection.send("PRIVMSG {} :.ban {} {}\r\n".format(args.channel, args.username, args.reason).encode("utf-8"))
 
 class IrcInfo:
     host: str
@@ -258,11 +207,11 @@ class IrcClient:
 
         self.connected = True
 
-        self.rq = ResponseQueue(self.connection, self.responses, _rate, cap_mode)
+        self.rq = ResponseQueue(self, self.responses, cap_mode)
         self.rq.setDaemon(True)
         self.rq.start()
 
-        self.cq = CommandQueue(self.connection, self.commands, _rate)
+        self.cq = CommandQueue(self, self.commands, _rate)
         self.cq.setDaemon(True)
         self.cq.start()
 
@@ -280,3 +229,82 @@ class IrcClient:
             return self.responses.popleft()
         else:
             return None
+
+class CommandQueue(threading.Thread):
+    client: IrcClient
+    commands: deque
+    rate: float
+
+    def __init__(self, _client: IrcClient, _commands: deque, _rate: float):
+        super(CommandQueue, self).__init__()
+        self.client = _client
+        self.rate = _rate
+        self.commands = _commands
+
+    def run(self):
+        while True:
+            if len(self.commands) != 0:
+                command: IrcCommand = self.commands.popleft()
+                if command.type == CommandType.pong:
+                    send_pong(self.client.connection)
+                elif command.type == CommandType.message:
+                    send_message(self.client.connection, command.args)
+                elif command.type == CommandType.timeout:
+                    timeout_user(self.client.connection, command.args)
+                elif command.type == CommandType.ban:
+                    ban_user(self.client.connection, command.args)
+                time.sleep(1 / self.rate)
+
+class ResponseQueue(threading.Thread):
+    client: IrcClient
+    responses: deque
+    connected: float
+    cap_mode: bool
+    def __init__(self, _client: IrcClient, _responses: deque, _cap_mode):
+        super(ResponseQueue, self).__init__()
+        self.client = _client
+        self.responses = _responses
+        self.cap_mode = _cap_mode
+
+    def run(self):
+        while True:
+            try:
+                response = self.client.connection.recv(1024).decode("utf-8")
+                if re.search(r"PING", response) is not None:
+                    properties = types.SimpleNamespace()
+                    properties.timestamp = datetime.datetime.utcnow()
+                    self.responses.appendleft(IrcResponse(ResponseType.ping, properties))
+                elif re.search(r"PRIVMSG", response) is not None:
+                    responses = response.split("\n@")
+                    for res in responses:
+                        if "PRIVMSG" in res:
+                            if ":twitchnotify!twitchnotify@twitchnotify.tmi.twitch.tv" in res:
+                                properties = decodeNotify(res)
+                                properties.timestamp = datetime.datetime.utcnow()
+                                self.responses.append(IrcResponse(ResponseType.subscribe, properties))
+                            else:
+                                properties = decodeMessage(res, self.cap_mode)
+                                properties.timestamp = datetime.datetime.utcnow()
+                                self.responses.append(IrcResponse(ResponseType.message, properties))
+                elif self.cap_mode:
+                    if re.search(r"JOIN", response):
+                        properties = decodeJoinPart(response)
+                        properties.timestamp = datetime.datetime.utcnow()
+                        self.responses.append(IrcResponse(ResponseType.join, properties))
+                    elif re.search(r"PART", response):
+                        properties = decodeJoinPart(response)
+                        properties.timestamp = datetime.datetime.utcnow()
+                        self.responses.append(IrcResponse(ResponseType.part, properties))
+                    elif re.search(r"WHISPER", response):
+                        properties = decodeWhisper(response, self.cap_mode)
+                        properties.timestamp = datetime.datetime.utcnow()
+                        self.responses.append(IrcResponse(ResponseType.whisper, properties))
+                    elif re.search(r"USERNOTICE", response):
+                        properties = decodeUserNotice(response)
+                        properties.timestamp = datetime.datetime.utcnow()
+                        self.responses.appendleft(IrcResponse(ResponseType.subscribe, properties))
+                    # Only thing that is left over is the MODE(mod state changes), I don't believe this needs to be added as a response currently. Get current mod list from tmi.twitch.tv
+            except socket.error:
+                '''No Responses Yet'''
+            except UnicodeDecodeError:
+                '''Failed to Decode Response'''
