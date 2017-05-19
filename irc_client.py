@@ -278,7 +278,8 @@ class ResponseQueue(threading.Thread):
                     responses = response.split("\n@")
                     for res in responses:
                         if "PRIVMSG" in res:
-                            if ":twitchnotify!twitchnotify@twitchnotify.tmi.twitch.tv" in res:
+                            NOTIFY = re.compile(r"^:twitchnotify!twitchnotify@twitchnotify\.tmi\.twitch\.tv PRIVMSG #\w+ :\w*")
+                            if NOTIFY.match(res):
                                 properties = decodeNotify(res)
                                 properties.timestamp = datetime.datetime.utcnow()
                                 self.responses.append(IrcResponse(ResponseType.subscribe, properties))
