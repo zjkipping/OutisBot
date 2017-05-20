@@ -100,16 +100,18 @@ def decodeUserNotice(response: str):
         parts = prop.split("=")
         if parts[0] == "msg-param-months":
             properties.months = int(parts[1])
-        if parts[0] == "msg-param-sub-plan":
+        elif parts[0] == "msg-param-sub-plan":
             properties.sub_plan = parts[1]
-        if parts[0] == "display-name":
+        elif parts[0] == "display-name":
             properties.display_name = parts[1]
-        if parts[0] == "user-id":
+        elif parts[0] == "user-id":
             properties.user_id = int(parts[1])
-        if parts[0] == "msg-id":
+        elif parts[0] == "msg-id":
             properties.type = parts[1]
-        if parts[0] == "login":
+        elif parts[0] == "login":
             properties.username = parts[1]
+    if properties.display_name == '':
+        properties.display_name = properties.username
     return properties
 
 def decodeNotify(response: str):
@@ -130,6 +132,38 @@ def decodeNotify(response: str):
         properties.months = 1
     properties.user_id = None
     return properties
+
+def getCheerProps(props: list):
+    properties = types.SimpleNamespace()
+    for prop in props:
+        parts = prop.split("=")
+        if parts[0] == "@badges":
+            properties.badges = parts[1]
+        elif parts[0] == "bits":
+            properties.bits = int(parts[1])
+        elif parts[0] == "mod":
+            properties.mod = int(parts[1])
+        elif parts[0] == "subscriber":
+            properties.subscriber = int(parts[1])
+        elif parts[0] == "user-id":
+            properties.user_id = int(parts[1])
+        elif parts[0] == "user-type":
+            properties.user_type = parts[1]
+        elif parts[0] == "display-name":
+            properties.display_name = parts[1]
+    return properties
+
+def decodeCheer(response: str):
+    CHAT_MSG = re.compile(r"^:\w+!\w+@\w+\.tmi\.twitch\.tv \w+ #\w+ :")
+    properties = types.SimpleNamespace()
+    parts = response.split(" ", 1)
+    cap_props = parts[0].split(";")
+    msg = parts[1]
+    properties.username = re.search(r"\w+", msg).group(0)
+    properties.message = CHAT_MSG.sub("", msg).rstrip()
+    properties.info = getCheerProps(cap_props)
+    return properties
+
 
 class CommandType(Enum):
     pong = 1
@@ -279,11 +313,15 @@ class ResponseQueue(threading.Thread):
                     for res in responses:
                         if "PRIVMSG" in res:
                             NOTIFY = re.compile(r"^:twitchnotify!twitchnotify@twitchnotify\.tmi\.twitch\.tv PRIVMSG #\w+ :\w*")
-                            if NOTIFY.match(res):
+                            if NOTIFY.match(res): # sub notifications not caught by USERNOTICE
                                 properties = decodeNotify(res)
                                 properties.timestamp = datetime.datetime.utcnow()
                                 self.responses.append(IrcResponse(ResponseType.subscribe, properties))
-                            else:
+                            elif self.cap_mode and re.search(r"bits=\w+;", res.split(" ", 1)[0]): # Cheers
+                                properties = decodeCheer(res)
+                                properties.timestamp = datetime.datetime.utcnow()
+                                self.responses.append(IrcResponse(ResponseType.cheer, properties))
+                            else: # normal chat messages
                                 properties = decodeMessage(res, self.cap_mode)
                                 properties.timestamp = datetime.datetime.utcnow()
                                 self.responses.append(IrcResponse(ResponseType.message, properties))

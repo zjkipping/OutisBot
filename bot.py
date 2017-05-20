@@ -34,7 +34,6 @@ while running:
         if response.type == ResponseType.ping:
             client.addCommand_front(IrcCommand(CommandType.pong, types.SimpleNamespace()))
         elif response.type == ResponseType.message:
-            pass
             # if response.properties.message == "die":
             #     args = types.SimpleNamespace()
             #     args.channel = channel
@@ -54,6 +53,8 @@ while running:
                 print("'{}' just resubscribed for {} months in a row!".format(response.properties.display_name, response.properties.months))
             else:
                 print("'{}' just subscribed!".format(response.properties.display_name))
+        elif response.type == ResponseType.cheer:
+            print("'{}' just cheered {} bits!".format(response.properties.info.display_name, response.properties.info.bits))
 
     # if input() == "exit":
     #     # Initiate Thread Stopping Here
