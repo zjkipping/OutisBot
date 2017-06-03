@@ -1,63 +1,94 @@
-from irc_client import IrcClient, IrcInfo, IrcCommand, CommandType, IrcResponse, ResponseType
-import types
-import cfg
+import time, cfg
+from library.irc_client import IrcClient
+from types import SimpleNamespace
+from library.resources.common import IrcInfo, IrcCommand, IrcCommandType, IrcResponse, IrcResponseType
 
-# Currently this file is just a test for the IRC Client
-
-config = IrcInfo(cfg.HOST, cfg.PORT, cfg.NICK, cfg.PASS, cfg.CHAN)
-rate = cfg.RATE
-channel = cfg.CHAN
-name = cfg.NICK
-
-client = IrcClient(config, rate, True)
-while client.connected is False:
-    pass
-
-# args = types.SimpleNamespace()
-# args.channel = channel
-# args.username = name
-# args.message = "Hello Chat!"
-# client.addCommand_back(IrcCommand(CommandType.message, args))
-
-
-# need to move this while loop to a ChatSystem class, that is given info to create it's own IrcClient
-# also need to make functions out of the command types, to condense code
-
-# Possibly have two main classes ran from here, and this just controls changing settings/stopping?
-#   - mainly the first class deals with chat and commands; other deals with building user lists and doing background meta events
-
-
-running = True
-while running:
-    if client.hasResponses():
-        response: IrcResponse = client.getResponse()
-        if response.type == ResponseType.ping:
-            client.addCommand_front(IrcCommand(CommandType.pong, types.SimpleNamespace()))
-        elif response.type == ResponseType.message:
-            # if response.properties.message == "die":
-            #     args = types.SimpleNamespace()
-            #     args.channel = channel
-            #     args.username = response.properties.username
-            #     args.reason = "Precision of Language"
-            #     args.time = 5
-            #     client.addCommand_back(IrcCommand(CommandType.timeout, args))
-            # else:
-            # print("|{}| {}({}): {}".format(response.properties.timestamp, response.properties.username, getattr(response.properties.info, 'user_id', '#') , response.properties.message))
-            pass
-        elif response.type == ResponseType.join:
-            print("'{}' joined the chat".format(response.properties.username))
-        elif response.type == ResponseType.part:
-            print("'{}' parted from the chat".format(response.properties.username))
-        elif response.type == ResponseType.subscribe:
-            if response.properties.type == "resub":
-                print("'{}' just resubscribed for {} months in a row!".format(response.properties.display_name, response.properties.months))
-            else:
-                print("'{}' just subscribed!".format(response.properties.display_name))
-        elif response.type == ResponseType.cheer:
-            print("'{}' just cheered {} bits!".format(response.properties.info.display_name, response.properties.info.bits))
-
-    # if input() == "exit":
-    #     # Initiate Thread Stopping Here
-    #     #   -> Need threads to PART from any connections they have to twitch servers
-    #     #   -> Need threads that have data, to save them to corresponding files/database
-    #     running = False
+info = IrcInfo(cfg.HOST, cfg.PORT, cfg.NICK, cfg.BOT_SECRET, cfg.CHAN)
+client = IrcClient(info, True, cfg.RATE)
+timeout = [1, 2, 2, 4, 4, 8, 8, 16, 16, 32, 32, 64]
+count = 0
+while client.hasInternetConnection() is False:
+    print("No Internet Connection... timeout: {}".format(timeout[count]))
+    time.sleep(timeout[count])
+    count += 1
+    if count == len(timeout):
+        count -= 1
+count = 0
+client.connect()
+while client.hasServerConnection() is False :
+    print("Twitch IRC Servers Are Down... timeout: {}".format(timeout[count]))
+    client.disconnect()
+    time.sleep(timeout[count])
+    count += 1
+    if count == len(timeout) :
+        count -= 1
+    client.connect()
+client.start()
+print("Bot Connected Successfully")
+while True:
+    while client.hasServerConnection() is True and client.hasInternetConnection() is True:
+        if client.hasResponses():
+            response: IrcResponse = client.getResponse()
+            if response.type == IrcResponseType.ping:
+                client.addCommandLeft(IrcCommand(IrcCommandType.pong, SimpleNamespace()))
+                print("Responded to Ping!")
+            elif response.type == IrcResponseType.message:
+                if response.args.message == "ban me":
+                    args = SimpleNamespace()
+                    args.channel = info.channel
+                    args.username = response.args.login
+                    args.reason = "Precision of Language"
+                    #client.addCommandRight(IrcCommand(IrcCommandType.ban, args))
+                elif response.args.message == "time me out":
+                    args = SimpleNamespace()
+                    args.channel = info.channel
+                    args.username = response.args.login
+                    args.duration = 5
+                    args.reason = "Precision of Language"
+                    #client.addCommandRight(IrcCommand(IrcCommandType.timeout, args))
+                else:
+                    print("({}) {}: {}".format(response.timestamp, response.args.display, response.args.message))
+                    '''getting '!' commands from chat'''
+            elif response.type == IrcResponseType.whisper:
+                '''dealing with whispers from users'''
+            elif response.type == IrcResponseType.cheer:
+                args = SimpleNamespace()
+                args.message = "Thanks for the {} bit cheer, {}!".format(response.args.amount, response.args.display)
+                args.channel = info.channel
+                #client.addCommandRight(IrcCommand(IrcCommandType.message, args))
+            elif response.type == IrcResponseType.subscribe:
+                args = SimpleNamespace()
+                if response.args.type == "sub":
+                    args.message = "Thanks {} for subscribing to the channel!".format(response.args.display)
+                    args.channel = info.channel
+                else:
+                    args.message = "{} subscribed for {} months in a row. Thanks for the continued support!".format(response.args.display, response.args.duration)
+                    args.channel = info.channel
+                #client.addCommandRight(IrcCommand(IrcCommandType.message, args))
+    if client.hasInternetConnection() is False:
+        count = 0
+        client.disconnect()
+        client.stop()
+        while client.hasInternetConnection() is False :
+            print("No Internet Connection... timeout: {}".format(timeout[count]))
+            time.sleep(timeout[count])
+            count += 1
+            if count == len(timeout) :
+                count -= 1
+        print("Internet Connection Back Up!")
+    elif client.hasServerConnection() is False:
+        count = 0
+        if client.isRunning() is True:
+            client.disconnect()
+            client.stop()
+        client.connect()
+        while client.hasServerConnection() is False:
+            client.disconnect()
+            print("Twitch IRC Server Is Down... timeout: {}".format(timeout[count]))
+            time.sleep(timeout[count])
+            count += 1
+            if count == len(timeout) :
+                count -= 1
+            client.connect()
+        client.start()
+        print("Reconnected To Twitch IRC Server!")
