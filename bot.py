@@ -5,23 +5,21 @@ from library.resources.common import IrcInfo, IrcCommand, IrcCommandType, IrcRes
 
 info = IrcInfo(cfg.HOST, cfg.PORT, cfg.NICK, cfg.BOT_SECRET, cfg.CHAN)
 client = IrcClient(info, True, cfg.RATE)
-timeout = [1, 2, 2, 4, 4, 8, 8, 16, 16, 32, 32, 64]
+timeout = [1, 2, 2, 2, 4, 4, 4, 8, 8, 8, 16, 16, 16, 32, 32, 32, 64]
 count = 0
 while client.hasInternetConnection() is False:
-    print("No Internet Connection... timeout: {}".format(timeout[count]))
+    print("No Internet Connection ... timeout: {}".format(timeout[count]))
     time.sleep(timeout[count])
-    count += 1
-    if count == len(timeout):
-        count -= 1
+    if count < len(timeout) - 1:
+        count += 1
 count = 0
 client.connect()
-while client.hasServerConnection() is False :
-    print("Twitch IRC Servers Are Down... timeout: {}".format(timeout[count]))
+while client.hasServerConnection() is False:
+    print("Failed to connect to Twitch IRC Server ... timeout: {}".format(timeout[count]))
     client.disconnect()
     time.sleep(timeout[count])
-    count += 1
-    if count == len(timeout) :
-        count -= 1
+    if count < len(timeout) - 1:
+        count += 1
     client.connect()
 client.start()
 print("Bot Connected Successfully")
@@ -51,30 +49,33 @@ while True:
                     '''getting '!' commands from chat'''
             elif response.type == IrcResponseType.whisper:
                 '''dealing with whispers from users'''
+                print("WHISPER ({}) {}: {}".format(response.timestamp, response.args.display, response.args.message))
             elif response.type == IrcResponseType.cheer:
                 args = SimpleNamespace()
                 args.message = "Thanks for the {} bit cheer, {}!".format(response.args.amount, response.args.display)
                 args.channel = info.channel
+                print("{} bits - {}".format(response.args.amount, response.args.display))
                 #client.addCommandRight(IrcCommand(IrcCommandType.message, args))
             elif response.type == IrcResponseType.subscribe:
                 args = SimpleNamespace()
                 if response.args.type == "sub":
                     args.message = "Thanks {} for subscribing to the channel!".format(response.args.display)
                     args.channel = info.channel
+                    print("{} subscribed".format(response.args.display))
                 else:
                     args.message = "{} subscribed for {} months in a row. Thanks for the continued support!".format(response.args.display, response.args.duration)
                     args.channel = info.channel
+                    print("{} re-subscribed for {} months".format(response.args.display, response.args.duration))
                 #client.addCommandRight(IrcCommand(IrcCommandType.message, args))
     if client.hasInternetConnection() is False:
         count = 0
         client.disconnect()
         client.stop()
-        while client.hasInternetConnection() is False :
-            print("No Internet Connection... timeout: {}".format(timeout[count]))
+        while client.hasInternetConnection() is False:
+            print("No Internet Connection ... timeout: {}".format(timeout[count]))
             time.sleep(timeout[count])
-            count += 1
-            if count == len(timeout) :
-                count -= 1
+            if count < len(timeout) - 1 :
+                count += 1
         print("Internet Connection Back Up!")
     elif client.hasServerConnection() is False:
         count = 0
@@ -84,11 +85,10 @@ while True:
         client.connect()
         while client.hasServerConnection() is False:
             client.disconnect()
-            print("Twitch IRC Server Is Down... timeout: {}".format(timeout[count]))
+            print("Failed to connect to Twitch IRC Server ... timeout: {}".format(timeout[count]))
             time.sleep(timeout[count])
-            count += 1
-            if count == len(timeout) :
-                count -= 1
+            if count < len(timeout) - 1 :
+                count += 1
             client.connect()
         client.start()
         print("Reconnected To Twitch IRC Server!")

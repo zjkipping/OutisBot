@@ -1,8 +1,9 @@
-import re, socket, requests
+import re, socket
 from collections import deque
 from library.resources.common import IrcInfo
 from library.resources.command_manager import CommandManager
 from library.resources.response_manager import ResponseManager
+from library.resources.internet_connection import InternetConnection
 
 class IrcClient:
     def __init__(self, _info: IrcInfo, _mode: bool, _rate: float):
@@ -14,6 +15,8 @@ class IrcClient:
         self.__rate = _rate
         self.__rm: ResponseManager = ResponseManager(self.__responses)
         self.__cm: CommandManager = CommandManager(self.__commands)
+        self.__int_conn: InternetConnection = InternetConnection()
+        self.__int_conn.start()
         self.__ser_conn: bool = False
         self.__running = False
     def addCommandLeft(self, _command):
@@ -38,16 +41,8 @@ class IrcClient:
                     return True
         else:
             return False
-    @staticmethod
-    def hasInternetConnection():
-        try:
-            response = requests.get("http://www.google.com", timeout = 5)
-            if response:
-                return True
-            else:
-                return False
-        except (requests.ConnectionError, requests.exceptions.ReadTimeout):
-            return False
+    def hasInternetConnection(self):
+        return self.__int_conn.get()
     def isRunning(self):
         return self.__running
     def connect(self):
@@ -73,10 +68,11 @@ class IrcClient:
                 except socket.error:
                     '''No Responses Yet'''
     def disconnect(self):
-        self.__socket.send("PART {}\r\n".format(self.__info.channel).encode("utf-8"))
-        self.__socket.shutdown(1)
-        self.__socket.close()
-        self.__ser_conn = False
+        if self.__ser_conn is True:
+            self.__socket.send("PART {}\r\n".format(self.__info.channel).encode("utf-8"))
+            self.__socket.shutdown(1)
+            self.__socket.close()
+            self.__ser_conn = False
     def start(self):
         self.__rm = ResponseManager(self.__responses)
         self.__rm.setup(self.__mode, self.__socket)

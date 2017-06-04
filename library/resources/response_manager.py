@@ -100,37 +100,35 @@ class ResponseManager(threading.Thread):
     def run(self):
         while self.__running:
             try:
-                response = self.__connection.recv(1024).decode("utf-8")
-                if response:
-                    if re.match(r"^PING :tmi\.twitch\.tv", response) is not None:
-                        self.__responses.appendleft(IrcResponse(IrcResponseType.ping, datetime.datetime.utcnow(), SimpleNamespace()))
-                    elif re.match(r"^:\w+!\w+@\w+\.tmi\.twitch\.tv PRIVMSG #\w+ :\w*", response) is not None:
-                        privmsgs = response.split("\n@")
-                        for privmsg in privmsgs:
-                            if re.match(r"^:\w+!\w+@\w+\.tmi\.twitch\.tv PRIVMSG #\w+ :\w*", privmsg) is not None:
-                                self.__responses.append(IrcResponse(IrcResponseType.message, datetime.datetime.utcnow(), decodeMessageBasic(privmsg)))
-                    elif self.__mode:
-                        if len(response.split(" ", 1)) > 1:
-                            irc = response.split(" ", 1)[1]
-                            if re.match(r"^:\w+!\w+@\w+\.tmi\.twitch\.tv PRIVMSG #\w+ :\w*", irc) is not None:
-                                privmsgs = response.split("\n@")
-                                for privmsg in privmsgs:
-                                    if len(privmsg.split(" ", 1)) > 1 :
-                                        priv_headers = privmsg.split(" ", 1)[0]
-                                        priv_irc = privmsg.split(" ", 1)[1]
-                                        if re.match(r"^:\w+!\w+@\w+\.tmi\.twitch\.tv PRIVMSG #\w+ :\w*", priv_irc) is not None:
-                                            if re.search(r"bits=\w+;", priv_headers) is not None:
-                                                self.__responses.append(IrcResponse(IrcResponseType.cheer, datetime.datetime.utcnow(), decodeCheer(privmsg)))
-                                            else:
-                                                self.__responses.append(IrcResponse(IrcResponseType.message, datetime.datetime.utcnow(), decodeMessageAdvanced(privmsg)))
-                            elif re.match(r"^:\w+!\w+@\w+\.tmi\.twitch\.tv WHISPER \w+ :\w*", irc) is not None:
-                                self.__responses.append(IrcResponse(IrcResponseType.whisper, datetime.datetime.utcnow(), decodeWhisper(response)))
-                            elif re.match(r"^:tmi\.twitch\.tv USERNOTICE #\w+", irc) is not None:
-                                self.__responses.appendleft(IrcResponse(IrcResponseType.subscribe, datetime.datetime.utcnow(), decodeUserNotice(response)))
+                responses = self.__connection.recv(1024).decode("utf-8").split("\r\n")
+                if responses:
+                    for response in responses:
+                        if response is not '':
+                            if re.match(r"^PING :tmi\.twitch\.tv", response) is not None:
+                                self.__responses.appendleft(IrcResponse(IrcResponseType.ping, datetime.datetime.utcnow(), SimpleNamespace()))
+                            elif re.match(r"^:\w+!\w+@\w+\.tmi\.twitch\.tv PRIVMSG #\w+ :\w*", response) is not None:
+                                self.__responses.append(IrcResponse(IrcResponseType.message, datetime.datetime.utcnow(), decodeMessageBasic(response)))
+                            elif self.__mode:
+                                if len(response.split(" ", 1)) > 1:
+                                    headers = response.split(" ", 1)[0]
+                                    irc = response.split(" ", 1)[1]
+                                    if re.match(r"^:\w+!\w+@\w+\.tmi\.twitch\.tv PRIVMSG #\w+ :\w*", irc) is not None:
+                                        if re.search(r"bits=\w+;", headers) is not None:
+                                            self.__responses.append(IrcResponse(IrcResponseType.cheer, datetime.datetime.utcnow(), decodeCheer(response)))
+                                        else:
+                                            self.__responses.append(IrcResponse(IrcResponseType.message, datetime.datetime.utcnow(), decodeMessageAdvanced(response)))
+                                            pass
+                                    elif re.match(r"^:\w+!\w+@\w+\.tmi\.twitch\.tv WHISPER \w+ :\w*", irc) is not None:
+                                        self.__responses.append(IrcResponse(IrcResponseType.whisper, datetime.datetime.utcnow(), decodeWhisper(response)))
+                                    elif re.match(r"^:tmi\.twitch\.tv USERNOTICE #\w+", irc) is not None:
+                                        if "msg-id=resub;" in headers or "msg-id=sub;" in headers:
+                                            self.__responses.appendleft(IrcResponse(IrcResponseType.subscribe, datetime.datetime.utcnow(), decodeUserNotice(response)))
+                                        else:
+                                            print(response)
+                                            '''Other Notices From Twitch'''
                 else:
-                    print("Connection To Twitch IRC Closed...")
                     self.__running = False
-            except socket.error:
+            except (socket.error, UnicodeDecodeError):
                 '''No Responses Yet'''
     def stop(self):
         self.__running = False
