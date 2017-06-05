@@ -1,0 +1,2 @@
+Use the api.twitch.tv to do statistics based things/commands
+    - mod/follow/sub list
