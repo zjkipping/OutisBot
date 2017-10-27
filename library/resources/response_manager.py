@@ -124,7 +124,6 @@ class ResponseManager(threading.Thread):
                                                 self.__responses.append(IrcResponse(IrcResponseType.cheer, datetime.datetime.utcnow(), decodeCheer(response)))
                                             else:
                                                 self.__responses.append(IrcResponse(IrcResponseType.message, datetime.datetime.utcnow(), decodeMessageAdvanced(response)))
-                                                pass
                                         elif re.match(r"^:\w+!\w+@\w+\.tmi\.twitch\.tv WHISPER \w+ :\w*", irc) is not None:
                                             self.__responses.append(IrcResponse(IrcResponseType.whisper, datetime.datetime.utcnow(), decodeWhisper(response)))
                                         elif re.match(r"^:tmi\.twitch\.tv USERNOTICE #\w+", irc) is not None:

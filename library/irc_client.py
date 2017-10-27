@@ -48,7 +48,11 @@ class IrcClient:
     def connect(self):
         if self.hasInternetConnection() is True:
             self.__socket = socket.socket()
-            self.__socket.connect((self.__info.host, self.__info.port))
+            try:
+                self.__socket.connect((self.__info.host, self.__info.port))
+            except TimeoutError:
+                self.__ser_conn = False
+                return;
             self.__socket.send("PASS oauth:{}\r\n".format(self.__info.oauth).encode("utf-8"))
             self.__socket.send("NICK {}\r\n".format(self.__info.name).encode("utf-8"))
             if self.__mode:
